@@ -15,22 +15,24 @@ from utils.rag_chain import create_rag_chain
 from utils.text_splitter import split_text
 from utils.vector_store import create_vector_store
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
-# Secure API Key Retrieval (Streamlit Secrets -> OS Environment)
-api_key = None
+# Multi-level API Key Fallback
+# Multi-level API Key Fallback (Local Env -> Cloud Secrets)
+api_key = os.getenv("GROQ_API_KEY")
 
-if "GROQ_API_KEY" in st.secrets and st.secrets["GROQ_API_KEY"]:
-    api_key = st.secrets["GROQ_API_KEY"]
-elif os.getenv("GROQ_API_KEY"):
-    api_key = os.getenv("GROQ_API_KEY")
+if not api_key:
+    try:
+        if "GROQ_API_KEY" in st.secrets:
+            api_key = st.secrets["GROQ_API_KEY"]
+    except Exception:
+        pass
 
 if api_key:
     os.environ["GROQ_API_KEY"] = api_key
 else:
     st.warning("⚠️ GROQ_API_KEY missing! Add it to .env or Streamlit secrets.")
-
 # Initialize Session State
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -80,7 +82,6 @@ with st.sidebar:
     st.divider()
     st.markdown("### ⚙️ Settings")
 
-    # Default selected theme set to "🌙 Dark" (index=1)
     theme = st.selectbox(
         "🎨 Theme",
         ["🌞 Light", "🌙 Dark"],
@@ -111,7 +112,7 @@ with st.sidebar:
     st.progress(100)
     st.success("✅ AI Ready")
 
-# Dynamically Inject CSS based on selected Theme (Default: Dark)
+# Dynamically Inject CSS based on selected Theme
 if theme == "🌙 Dark":
     text_color = "#F8FAFC"
     bg_color = "#0B0F17"
@@ -305,7 +306,6 @@ if uploaded_files:
     with c2:
         st.image(pix.tobytes("png"), use_container_width=True)
 
-        # Precise Control Bar (Tight Alignment)
         p_col1, p_col2, p_col3 = st.columns([1, 2, 1])
 
         with p_col1:
@@ -439,11 +439,15 @@ if uploaded_files:
 
         st.markdown(f"**Answer:**\n{response.content}")
 
-        tts = gTTS(text=response.content, lang="en")
-        temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        tts.save(temp_audio.name)
+        # Safe gTTS Execution to Prevent App Crash
+        try:
+            tts = gTTS(text=response.content, lang="en")
+            temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+            tts.save(temp_audio.name)
+            st.audio(temp_audio.name)
+        except Exception:
+            st.warning("⚠️ Audio response generation skipped due to connection speed.")
 
-        st.audio(temp_audio.name)
         st.info(f"📄 Source Page: {page_number}")
 
         if st.button("⭐ Bookmark this Answer", key="btn_bookmark_answer"):
