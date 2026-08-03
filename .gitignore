@@ -1,0 +1,16 @@
+# Environments
+venv/
+.venv/
+env/
+
+# Cache & Python
+__pycache__/
+*.pyc
+
+
+# Vector database & Large files
+vectorstore/
+chroma_db/
+faiss_index/
+*.pdf
+.env

@@ -1,0 +1,26 @@
+# 🤖 KnowGen AI
+
+Enterprise Intelligent PDF Knowledge Assistant
+
+## Features
+
+- 📄 Upload Multiple PDFs
+- 💬 Chat with PDF
+- 🔍 Search in PDF
+- 📝 AI Summary
+- 📚 Study Notes
+- 🧠 Flashcards
+- ❓ Quiz Generation
+- ⭐ Bookmark Answers
+- 🔊 Text-to-Speech
+- 🌙 Dark Theme
+
+## Tech Stack
+
+- Python
+- Streamlit
+- LangChain
+- FAISS
+- HuggingFace Embeddings
+- Groq LLM
+- PyMuPDF
