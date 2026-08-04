@@ -542,6 +542,7 @@ if uploaded_files:
     preview_col, info_col = st.columns([1.35, 0.85])
 
     with preview_col:
+        # FIXED: Replacing invalid width=None with use_container_width=True
         st.image(pix.tobytes("png"), use_container_width=True)
         p_col1, p_col2, p_col3 = st.columns([1, 2, 1])
         with p_col1:
@@ -779,8 +780,10 @@ if uploaded_files:
         st.subheader("📝 AI Summary")
         st.write(st.session_state["summary_text"])
 
-        if "summary_pdf_path" in st.session_state and os.path.exists(st.session_state["summary_pdf_path"]):
-            with open(st.session_state["summary_pdf_path"], "rb") as file:
+        # SAFE FILE PATH CHECK (FIXED TYPE ERROR BUG)
+        summary_path = st.session_state.get("summary_pdf_path")
+        if summary_path and isinstance(summary_path, str) and os.path.exists(summary_path):
+            with open(summary_path, "rb") as file:
                 st.download_button(
                     "📥 Download Summary PDF",
                     data=file,
@@ -836,8 +839,10 @@ if uploaded_files:
         st.subheader("📚 AI Study Notes")
         st.write(st.session_state["notes_text"])
 
-        if "notes_pdf_path" in st.session_state and os.path.exists(st.session_state["notes_pdf_path"]):
-            with open(st.session_state["notes_pdf_path"], "rb") as file:
+        # SAFE FILE PATH CHECK (FIXED TYPE ERROR BUG)
+        notes_path = st.session_state.get("notes_pdf_path")
+        if notes_path and isinstance(notes_path, str) and os.path.exists(notes_path):
+            with open(notes_path, "rb") as file:
                 st.download_button(
                     "📥 Download Notes PDF",
                     data=file,
