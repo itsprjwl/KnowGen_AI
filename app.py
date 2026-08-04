@@ -1,13 +1,13 @@
-import json
 import os
 import tempfile
 import fitz  # PyMuPDF
 import speech_recognition as sr
 import streamlit as st
 from audio_recorder_streamlit import audio_recorder
-from dotenv import load_dotenv
 from gtts import gTTS
 
+from utils.app_utils import get_theme_colors, init_session_state, reset_session_state
+from utils.config import DEFAULT_LANGUAGE, get_api_key
 from utils.download_pdf import create_pdf
 from utils.embeddings import get_embeddings
 from utils.pdf_loader import load_pdf
@@ -15,36 +15,32 @@ from utils.rag_chain import create_rag_chain
 from utils.text_splitter import split_text
 from utils.vector_store import create_vector_store
 
-# Load environment variables
-load_dotenv()
-
-# Multi-level API Key Fallback
-# Multi-level API Key Fallback (Local Env -> Cloud Secrets)
-api_key = os.getenv("GROQ_API_KEY")
-
-if not api_key:
-    try:
-        if "GROQ_API_KEY" in st.secrets:
-            api_key = st.secrets["GROQ_API_KEY"]
-    except Exception:
-        pass
-
+api_key = get_api_key()
 if api_key:
     os.environ["GROQ_API_KEY"] = api_key
 else:
     st.warning("⚠️ GROQ_API_KEY missing! Add it to .env or Streamlit secrets.")
-# Initialize Session State
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
 
-if "bookmarks" not in st.session_state:
-    st.session_state.bookmarks = []
+init_session_state()
 
-if "recent_questions" not in st.session_state:
-    st.session_state.recent_questions = []
 
-if "pdf_page_num" not in st.session_state:
-    st.session_state.pdf_page_num = 1
+def safe_call_llm(llm, prompt, fallback_message):
+    try:
+        response = llm.invoke(prompt)
+        return getattr(response, "content", str(response))
+    except Exception as exc:
+        st.error(f"⚠️ {fallback_message}")
+        return f"{fallback_message}\n\nReason: {exc}"
+
+
+def safe_load_pdf_documents(uploaded_file):
+    try:
+        uploaded_file.seek(0)
+        return load_pdf(uploaded_file)
+    except Exception as exc:
+        st.error(f"⚠️ Unable to read the uploaded PDF: {exc}")
+        return []
+
 
 # Page Configuration
 st.set_page_config(
@@ -64,18 +60,18 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.divider()
-    st.markdown("### 🚀 Navigation")
+    st.markdown("### 🧭 Navigation")
 
     page = st.radio(
         "",
         [
-            "🏠 Home",
-            "📄 Upload PDF",
-            "💬 AI Chat",
-            "📝 Summary",
-            "📚 Notes",
-            "❓ Quiz",
-            "🧠 Flashcards"
+            "Home",
+            "Upload",
+            "Chat",
+            "Summary",
+            "Notes",
+            "Quiz",
+            "Flashcards"
         ]
     )
 
@@ -87,6 +83,10 @@ with st.sidebar:
         ["🌞 Light", "🌙 Dark"],
         index=1
     )
+
+    if st.button("🧹 Clear session"):
+        reset_session_state()
+        st.rerun()
 
     st.divider()
     st.markdown("""
@@ -113,18 +113,12 @@ with st.sidebar:
     st.success("✅ AI Ready")
 
 # Dynamically Inject CSS based on selected Theme
-if theme == "🌙 Dark":
-    text_color = "#F8FAFC"
-    bg_color = "#0B0F17"
-    card_bg = "#111827"
-    border_color = "#1F2937"
-    input_bg = "#111827"
-else:
-    text_color = "#0F172A"
-    bg_color = "#F8FAFC"
-    card_bg = "#FFFFFF"
-    border_color = "#E2E8F0"
-    input_bg = "#FFFFFF"
+colors = get_theme_colors(theme)
+text_color = colors["text_color"]
+bg_color = colors["bg_color"]
+card_bg = colors["card_bg"]
+border_color = colors["border_color"]
+input_bg = colors["input_bg"]
 
 st.markdown(f"""
 <style>
@@ -216,6 +210,177 @@ div[data-testid="stMetricValue"] > div {{
     margin-top: 4px;
 }}
 
+/* Hero and Feature Cards */
+.welcome-card {{
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(56, 189, 248, 0.12));
+    border: 1px solid rgba(56, 189, 248, 0.24);
+    border-radius: 24px;
+    padding: 22px 24px;
+    margin-bottom: 18px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+}}
+
+.pill {{
+    display: inline-block;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.14);
+    color: #2563EB !important;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    letter-spacing: 0.02em;
+}}
+
+.section-card {{
+    background: {card_bg};
+    border: 1px solid {border_color};
+    border-radius: 16px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}}
+
+.section-card strong {{
+    color: #38BDF8 !important;
+}}
+
+.info-banner {{
+    background: rgba(37, 99, 235, 0.10);
+    border: 1px solid rgba(56, 189, 248, 0.24);
+    border-radius: 14px;
+    padding: 10px 12px;
+    margin: 10px 0 12px;
+    font-size: 14px;
+}}
+
+.feature-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin: 10px 0 22px;
+}}
+
+.feature-card {{
+    background: {card_bg};
+    border: 1px solid {border_color};
+    border-radius: 16px;
+    padding: 16px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+}}
+
+.feature-card strong {{
+    display: block;
+    margin-bottom: 6px;
+    color: #38BDF8 !important;
+}}
+
+.section-title {{
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}}
+
+.upload-card {{
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(56, 189, 248, 0.08));
+    border: 1px solid rgba(56, 189, 248, 0.24);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+}}
+
+.hero-shell {{
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.18), rgba(56, 189, 248, 0.14));
+    border: 1px solid rgba(56, 189, 248, 0.24);
+    border-radius: 24px;
+    padding: 24px 24px 20px;
+    margin-bottom: 18px;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}}
+
+.hero-content h1 {{
+    font-size: 32px;
+    font-weight: 800;
+    margin: 0 0 10px;
+    color: #F8FAFC !important;
+}}
+
+.hero-content p {{
+    font-size: 15px;
+    line-height: 1.6;
+    margin-bottom: 12px;
+    color: #E2E8F0 !important;
+}}
+
+.hero-actions {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}}
+
+.hero-chip {{
+    display: inline-block;
+    padding: 7px 11px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+    color: #F8FAFC !important;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}}
+
+.status-pill {{
+    display: inline-block;
+    margin-bottom: 12px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.16);
+    color: #22C55E !important;
+    font-size: 12px;
+    font-weight: 700;
+}}
+
+.workspace-shell {{
+    background: {card_bg};
+    border: 1px solid {border_color};
+    border-radius: 18px;
+    padding: 14px 16px;
+    margin: 8px 0 16px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+}}
+
+.workspace-header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}}
+
+.workspace-badge {{
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.14);
+    color: #2563EB !important;
+    font-size: 12px;
+    font-weight: 700;
+}}
+
+.mini-panel {{
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.10), rgba(56, 189, 248, 0.10));
+    border: 1px solid rgba(56, 189, 248, 0.24);
+    border-radius: 16px;
+    padding: 14px;
+    height: 100%;
+}}
+
+.mini-stat {{
+    margin-top: 8px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: {text_color} !important;
+}}
+
 /* Standardized Buttons */
 .stButton > button {{
     width: 100%;
@@ -268,61 +433,114 @@ div[data-testid="column"] div.stButton > button {{
 """, unsafe_allow_html=True)
 
 st.markdown("""
-<h1 class='main-title'>🤖 KnowGen AI</h1>
-<p class='sub-title'>Enterprise Intelligent PDF Knowledge Assistant</p>
+<div class='hero-shell'>
+    <div class='hero-content'>
+        <div class='pill'>⚡ Premium AI knowledge workspace</div>
+        <h1>Turn documents into instant expertise</h1>
+        <p>Upload PDFs, ask grounded questions, and generate summaries, notes, flashcards, quizzes, and translations from one polished workspace.</p>
+        <div class='hero-actions'>
+            <span class='hero-chip'>📄 PDF Intelligence</span>
+            <span class='hero-chip'>💬 AI Chat</span>
+            <span class='hero-chip'>🧠 Study Automation</span>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class='feature-grid'>
+    <div class='feature-card'><strong>📄 Smart upload</strong>Work with one or many PDFs in a single flow.</div>
+    <div class='feature-card'><strong>💬 Conversational Q&A</strong>Ask questions and receive grounded answers with source context.</div>
+    <div class='feature-card'><strong>🧠 Study assistant</strong>Create notes, summaries, flashcards, and quizzes automatically.</div>
+    <div class='feature-card'><strong>🌍 Translation ready</strong>Translate outputs into English, Hindi, or Marathi instantly.</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class='section-card'>
+    <strong>⚡ What you can do next</strong>
+    <div style='margin-top:6px;'>Upload a PDF, explore the content with AI, and instantly build study materials for faster learning.</div>
+</div>
 """, unsafe_allow_html=True)
 
 st.divider()
 
-st.markdown("## 📄 Upload PDF")
+st.markdown("""
+<div class='section-card upload-panel'>
+    <strong>📄 Upload your PDF</strong>
+    <div style='margin-top:6px;'>Drop one or more documents and begin your smarter study session.</div>
+</div>
+""", unsafe_allow_html=True)
 
 uploaded_files = st.file_uploader(
-    "Choose PDF files", type=["pdf"], accept_multiple_files=True, key="pdf_file_uploader"
+    "Upload PDF files", type=["pdf"], accept_multiple_files=True, key="pdf_file_uploader"
 )
 
 # File Process Block
 if uploaded_files:
+    if st.session_state.get("last_uploaded_count") != len(uploaded_files):
+        st.session_state["last_uploaded_count"] = len(uploaded_files)
+        reset_session_state()
     first_pdf = uploaded_files[0]
-    st.success(f"✅ {len(uploaded_files)} File(s) Uploaded")
-    st.subheader("📄 PDF Preview")
 
-    first_pdf.seek(0)
-    doc = fitz.open(stream=first_pdf.read(), filetype="pdf")
-    total_pages = len(doc)
+    st.markdown("""
+    <div class='status-pill'>✅ Files ready for AI processing</div>
+    """, unsafe_allow_html=True)
 
-    # Validate Page Number State
+    try:
+        first_pdf.seek(0)
+        doc = fitz.open(stream=first_pdf.read(), filetype="pdf")
+        total_pages = len(doc)
+    except Exception as exc:
+        st.error(f"⚠️ This PDF could not be processed: {exc}")
+        st.stop()
+
     if st.session_state.pdf_page_num > total_pages:
         st.session_state.pdf_page_num = 1
     if st.session_state.pdf_page_num < 1:
         st.session_state.pdf_page_num = 1
 
-    # Render High-Quality Page Preview
+    st.markdown("""
+    <div class='workspace-shell'>
+        <div class='workspace-header'>
+            <div>
+                <div class='pill'>📄 Document workspace</div>
+                <h3 style='margin: 0 0 6px 0;'>Preview and analyze your PDF</h3>
+            </div>
+            <div class='workspace-badge'>{0} file(s) uploaded</div>
+        </div>
+    </div>
+    """.format(len(uploaded_files)), unsafe_allow_html=True)
+
     page_doc = doc.load_page(st.session_state.pdf_page_num - 1)
     pix = page_doc.get_pixmap(dpi=140)
 
-    # Centered Page Preview Container
-    c1, c2, c3 = st.columns([1, 2.2, 1])
+    preview_col, info_col = st.columns([1.35, 0.85])
 
-    with c2:
+    with preview_col:
         st.image(pix.tobytes("png"), use_container_width=True)
-
         p_col1, p_col2, p_col3 = st.columns([1, 2, 1])
-
         with p_col1:
             if st.button("◄ Prev", key="btn_prev_page", disabled=(st.session_state.pdf_page_num <= 1)):
                 st.session_state.pdf_page_num -= 1
                 st.rerun()
-
         with p_col2:
             st.markdown(
                 f"<div class='page-badge-box'>Page {st.session_state.pdf_page_num} of {total_pages}</div>",
                 unsafe_allow_html=True
             )
-
         with p_col3:
             if st.button("Next ►", key="btn_next_page", disabled=(st.session_state.pdf_page_num >= total_pages)):
                 st.session_state.pdf_page_num += 1
                 st.rerun()
+
+    with info_col:
+        st.markdown("""
+        <div class='mini-panel'>
+            <div class='pill'>⚡ Live insight</div>
+            <div class='mini-stat'>AI is ready to read, search, and summarize your document.</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     progress = st.progress(0)
     status = st.empty()
@@ -333,8 +551,7 @@ if uploaded_files:
     documents = []
 
     for uploaded_file in uploaded_files:
-        uploaded_file.seek(0)
-        documents.extend(load_pdf(uploaded_file))
+        documents.extend(safe_load_pdf_documents(uploaded_file))
 
     pdf_text = "\n".join(
         [
@@ -342,6 +559,10 @@ if uploaded_files:
             for doc in documents
         ]
     )
+
+    if not documents:
+        st.warning("No text could be extracted from the uploaded PDF. Please try another file.")
+        st.stop()
     word_count = len(pdf_text.split())
     reading_time = max(1, word_count // 200)
 
@@ -353,20 +574,25 @@ if uploaded_files:
     st.divider()
 
     # PDF Statistics
-    st.subheader("📊 PDF Statistics")
+    st.markdown("""
+    <div class='section-card'>
+        <strong>📊 Document overview</strong>
+        <div style='margin-top:6px;'>A quick snapshot of your uploaded PDF before you start asking questions.</div>
+    </div>
+    """, unsafe_allow_html=True)
     m1, m2, m3, m4 = st.columns(4)
 
     with m1:
-        st.metric("📄 Words", f"{word_count:,}")
+        st.metric("Words", f"{word_count:,}")
 
     with m2:
-        st.metric("⏱ Reading Time", f"{reading_time} min")
+        st.metric("Reading Time", f"{reading_time} min")
 
     with m3:
-        st.metric("📦 Chunks", chunk_count)
+        st.metric("Chunks", chunk_count)
 
     with m4:
-        st.metric("📃 Total Pages", total_pages)
+        st.metric("Pages", total_pages)
 
     st.divider()
 
@@ -390,11 +616,15 @@ if uploaded_files:
 
     # Chat Section
     st.divider()
-    st.subheader("💬 Ask Your Question")
-    st.write("### 🎤 Voice Input")
+    st.markdown("""
+    <div class='section-card'>
+        <strong>💬 Ask your question</strong>
+        <div style='margin-top:6px;'>Use voice or typing to get an answer from your PDF in seconds.</div>
+    </div>
+    """, unsafe_allow_html=True)
 
     audio_bytes = audio_recorder(
-        text="Click to Record Voice",
+        text="Record voice",
         recording_color="#e74c3c",
         neutral_color="#2ecc71",
         icon_name="microphone",
@@ -402,7 +632,7 @@ if uploaded_files:
         key="voice_recorder"
     )
 
-    manual_question = st.text_input("Enter your question manually", key="chat_text_input")
+    manual_question = st.text_input("Type your question", key="chat_text_input")
     question = manual_question
 
     if audio_bytes:
@@ -431,17 +661,17 @@ if uploaded_files:
         final_prompt = prompt.format(context=context, input=question)
 
         with st.spinner("🤖 AI is thinking..."):
-            response = llm.invoke(final_prompt)
+            response_text = safe_call_llm(llm, final_prompt, "Unable to generate an answer right now.")
 
         st.session_state.chat_history.append(("You", question))
         st.session_state.recent_questions.append(question)
-        st.session_state.chat_history.append(("AI", response.content))
+        st.session_state.chat_history.append(("AI", response_text))
 
-        st.markdown(f"**Answer:**\n{response.content}")
+        st.markdown(f"**Answer:**\n{response_text}")
 
         # Safe gTTS Execution to Prevent App Crash
         try:
-            tts = gTTS(text=response.content, lang="en")
+            tts = gTTS(text=response_text, lang="en")
             temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
             tts.save(temp_audio.name)
             st.audio(temp_audio.name)
@@ -451,11 +681,13 @@ if uploaded_files:
         st.info(f"📄 Source Page: {page_number}")
 
         if st.button("⭐ Bookmark this Answer", key="btn_bookmark_answer"):
-            st.session_state.bookmarks.append(response.content)
+            st.session_state.bookmarks.append(response_text)
             st.success("✅ Answer Bookmarked Successfully!")
 
     if st.session_state.chat_history:
-        st.subheader("💬 Chat History")
+        st.markdown("""
+        <div class='info-banner'>💬 Recent conversation appears here for quick review.</div>
+        """, unsafe_allow_html=True)
         for sender, message in st.session_state.chat_history:
             st.markdown(f"**{sender}:** {message}")
 
@@ -488,9 +720,9 @@ if uploaded_files:
         {pdf_text[:4000]}
         """
         with st.spinner("Generating Summary..."):
-            summary = llm.invoke(summary_prompt)
-            st.session_state["summary_text"] = summary.content
-            st.session_state["summary_pdf_path"] = create_pdf(summary.content)
+            summary_text = safe_call_llm(llm, summary_prompt, "Summary generation failed.")
+            st.session_state["summary_text"] = summary_text
+            st.session_state["summary_pdf_path"] = create_pdf(summary_text)
 
     if "summary_text" in st.session_state:
         st.subheader("📝 AI Summary")
@@ -513,7 +745,8 @@ if uploaded_files:
     language = st.selectbox(
         "Select Language",
         ["English", "Hindi", "Marathi"],
-        key="select_language"
+        key="select_language",
+        index=["English", "Hindi", "Marathi"].index(DEFAULT_LANGUAGE)
     )
 
     if st.button("🌍 Translate Summary", key="btn_translate_summary"):
@@ -524,8 +757,8 @@ if uploaded_files:
         {pdf_text[:3000]}
         """
         with st.spinner("Translating..."):
-            translation = llm.invoke(trans_prompt)
-            st.session_state["translation_text"] = translation.content
+            translation_text = safe_call_llm(llm, trans_prompt, "Translation failed.")
+            st.session_state["translation_text"] = translation_text
 
     if "translation_text" in st.session_state:
         st.subheader(f"🌍 Summary in {language}")
@@ -544,9 +777,9 @@ if uploaded_files:
         {pdf_text[:3000]}
         """
         with st.spinner("Generating Notes..."):
-            notes = llm.invoke(notes_prompt)
-            st.session_state["notes_text"] = notes.content
-            st.session_state["notes_pdf_path"] = create_pdf(notes.content)
+            notes_text = safe_call_llm(llm, notes_prompt, "Note generation failed.")
+            st.session_state["notes_text"] = notes_text
+            st.session_state["notes_pdf_path"] = create_pdf(notes_text)
 
     if "notes_text" in st.session_state:
         st.subheader("📚 AI Study Notes")
@@ -578,8 +811,8 @@ if uploaded_files:
         {pdf_text[:3000]}
         """
         with st.spinner("Generating Flashcards..."):
-            flashcards = llm.invoke(flashcard_prompt)
-            st.session_state["flashcards_text"] = flashcards.content
+            flashcards_text = safe_call_llm(llm, flashcard_prompt, "Flashcard generation failed.")
+            st.session_state["flashcards_text"] = flashcards_text
 
     if "flashcards_text" in st.session_state:
         st.subheader("🧠 AI Flashcards")
@@ -602,8 +835,8 @@ if uploaded_files:
         {pdf_text[:3000]}
         """
         with st.spinner("Generating Quiz..."):
-            quiz = llm.invoke(quiz_prompt)
-            st.session_state["quiz_text"] = quiz.content
+            quiz_text = safe_call_llm(llm, quiz_prompt, "Quiz generation failed.")
+            st.session_state["quiz_text"] = quiz_text
 
     if "quiz_text" in st.session_state:
         st.subheader("❓ AI Quiz")
@@ -630,9 +863,8 @@ else:
 st.divider()
 
 st.markdown("""
-<div style="text-align:center;color:#94A3B8;padding:10px 0;">
+<div style="text-align:center;color:#94A3B8;padding:12px 0 4px 0;">
     <h4 style="margin:0;">🤖 KnowGen AI</h4>
-    <p style="margin:4px 0 0 0;">Enterprise Intelligent PDF Knowledge Assistant</p>
-    <p style="margin:2px 0 0 0;font-size:12px;">Developed with ❤️ by Prajwal Khot</p>
+    <p style="margin:4px 0 0 0;">Built for fast, smarter document understanding</p>
 </div>
 """, unsafe_allow_html=True)

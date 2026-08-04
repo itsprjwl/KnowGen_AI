@@ -2,20 +2,24 @@
 
 Enterprise Intelligent PDF Knowledge Assistant
 
-## Features
+## What this app does
 
-- 📄 Upload Multiple PDFs
-- 💬 Chat with PDF
-- 🔍 Search in PDF
-- 📝 AI Summary
-- 📚 Study Notes
-- 🧠 Flashcards
-- ❓ Quiz Generation
-- ⭐ Bookmark Answers
-- 🔊 Text-to-Speech
-- 🌙 Dark Theme
+KnowGen AI lets you upload one or more PDF documents, extract and index their content, and interact with them through a conversational AI experience. It can also generate summaries, study notes, flashcards, quizzes, and translated outputs from the uploaded content.
 
-## Tech Stack
+## Key features
+
+- 📄 Upload multiple PDFs
+- 💬 Ask questions about the document content
+- 🔍 Search for keywords inside uploaded PDFs
+- 📝 Generate AI summaries
+- 📚 Create study notes
+- 🧠 Build flashcards
+- ❓ Generate quiz questions
+- ⭐ Bookmark useful answers
+- 🔊 Listen to AI responses through text-to-speech
+- 🌙 Switch between light and dark themes
+
+## Tech stack
 
 - Python
 - Streamlit
@@ -24,3 +28,20 @@ Enterprise Intelligent PDF Knowledge Assistant
 - HuggingFace Embeddings
 - Groq LLM
 - PyMuPDF
+- ReportLab
+
+## Setup
+
+1. Create and activate a virtual environment.
+2. Install dependencies:
+   - pip install -r requirements.txt
+3. Create a .env file using .env.example and add your Groq API key.
+4. Run the app:
+   - streamlit run app.py
+
+## Environment variables
+
+- GROQ_API_KEY: your API key for the Groq model
+- GROQ_MODEL: optional override for the default model
+- EMBEDDING_MODEL: optional override for the embedding model
+

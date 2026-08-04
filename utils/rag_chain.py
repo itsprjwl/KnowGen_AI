@@ -1,16 +1,14 @@
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
-from dotenv import load_dotenv
-import os
 
-load_dotenv()
+from utils.config import DEFAULT_GROQ_MODEL, get_api_key
 
 
 def create_rag_chain(vector_store):
-
+    api_key = get_api_key()
     llm = ChatGroq(
-        model="llama-3.1-8b-instant",
-        api_key=os.getenv("GROQ_API_KEY")
+        model=DEFAULT_GROQ_MODEL,
+        api_key=api_key
     )
 
     retriever = vector_store.as_retriever(

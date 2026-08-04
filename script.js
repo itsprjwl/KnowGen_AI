@@ -1,43 +1,56 @@
 const topBtn = document.getElementById("topBtn");
+const themeBtn = document.getElementById("themeToggle");
+const loader = document.getElementById("loader");
 
-window.onscroll = function () {
-    if (document.body.scrollTop > 300 || document.documentElement.scrollTop > 300) {
-        topBtn.style.display = "block";
-    } else {
-        topBtn.style.display = "none";
-    }
-};
+function toggleTopButton() {
+    if (!topBtn) return;
+    const scrollY = window.scrollY || document.documentElement.scrollTop;
+    topBtn.style.display = scrollY > 300 ? "block" : "none";
+}
 
-topBtn.onclick = function () {
-    window.scrollTo({
-        top: 0,
-        behavior: "smooth"
+if (topBtn) {
+    window.addEventListener("scroll", toggleTopButton);
+    topBtn.addEventListener("click", () => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
     });
-};
+}
 
 const hiddenElements = document.querySelectorAll("section");
+if (typeof IntersectionObserver !== "undefined") {
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add("show");
+                entry.target.classList.remove("hidden");
+            }
+        });
+    }, { threshold: 0.15 });
 
-const observer = new IntersectionObserver((entries)=>{
-    entries.forEach((entry)=>{
-        if(entry.isIntersecting){
-            entry.target.classList.add("show");
-        }
+    hiddenElements.forEach((el) => {
+        el.classList.add("hidden");
+        observer.observe(el);
     });
+} else {
+    hiddenElements.forEach((el) => el.classList.add("show"));
+}
+
+window.addEventListener("load", () => {
+    if (document.body) {
+        document.body.classList.add("light");
+    }
+    if (themeBtn) {
+        themeBtn.textContent = "🌙";
+    }
+    setTimeout(() => {
+        if (loader) loader.style.display = "none";
+        toggleTopButton();
+    }, 500);
 });
 
-hiddenElements.forEach((el)=>{
-    el.classList.add("hidden");
-    observer.observe(el);
-});
-
-window.addEventListener("load", function () {
-    document.getElementById("loader").style.display = "none";
-});
-
-const themeBtn = document.getElementById("themeToggle");
-
-themeBtn.onclick = function(){
-
-    document.body.classList.toggle("dark");
-
+if (themeBtn) {
+    themeBtn.addEventListener("click", () => {
+        document.body.classList.toggle("light");
+        const isLight = document.body.classList.contains("light");
+        themeBtn.textContent = isLight ? "🌙" : "☀️";
+    });
 }
