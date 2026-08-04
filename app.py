@@ -15,13 +15,37 @@ from utils.rag_chain import create_rag_chain
 from utils.text_splitter import split_text
 from utils.vector_store import create_vector_store
 
+# ----------------------------------------------------
+# 1. PAGE CONFIGURATION (MUST BE THE FIRST STREAMLIT COMMAND)
+# ----------------------------------------------------
+st.set_page_config(
+    page_title="KnowGen AI",
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ----------------------------------------------------
+# 2. SESSION STATE INITIALIZATION & DEFENSIVE CHECKS
+# ----------------------------------------------------
+init_session_state()
+
+# Extra safety checks to prevent AttributeError across all pages
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "recent_questions" not in st.session_state:
+    st.session_state.recent_questions = []
+if "bookmarks" not in st.session_state:
+    st.session_state.bookmarks = []
+if "pdf_page_num" not in st.session_state:
+    st.session_state.pdf_page_num = 1
+
+# API Key setup
 api_key = get_api_key()
 if api_key:
     os.environ["GROQ_API_KEY"] = api_key
 else:
     st.warning("⚠️ GROQ_API_KEY missing! Add it to .env or Streamlit secrets.")
-
-init_session_state()
 
 
 def safe_call_llm(llm, prompt, fallback_message):
@@ -41,14 +65,6 @@ def safe_load_pdf_documents(uploaded_file):
         st.error(f"⚠️ Unable to read the uploaded PDF: {exc}")
         return []
 
-
-# Page Configuration
-st.set_page_config(
-    page_title="KnowGen AI",
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 # Sidebar Setup
 with st.sidebar:
@@ -481,6 +497,14 @@ if uploaded_files:
     if st.session_state.get("last_uploaded_count") != len(uploaded_files):
         st.session_state["last_uploaded_count"] = len(uploaded_files)
         reset_session_state()
+        init_session_state()
+        # Reset safe keys
+        st.session_state.chat_history = []
+        st.session_state.recent_questions = []
+        st.session_state.bookmarks = []
+        st.session_state.pdf_page_num = 1
+        st.session_state.rag_ready = False
+
     first_pdf = uploaded_files[0]
 
     st.markdown("""
@@ -495,9 +519,9 @@ if uploaded_files:
         st.error(f"⚠️ This PDF could not be processed: {exc}")
         st.stop()
 
-    if st.session_state.pdf_page_num > total_pages:
+    if st.session_state.get("pdf_page_num", 1) > total_pages:
         st.session_state.pdf_page_num = 1
-    if st.session_state.pdf_page_num < 1:
+    if st.session_state.get("pdf_page_num", 1) < 1:
         st.session_state.pdf_page_num = 1
 
     st.markdown("""
@@ -542,33 +566,60 @@ if uploaded_files:
         </div>
         """, unsafe_allow_html=True)
 
-    progress = st.progress(0)
-    status = st.empty()
+    # Prevent RAG Pipeline from Re-running unnecessarily
+    if not st.session_state.get("rag_ready", False):
+        progress = st.progress(0)
+        status = st.empty()
 
-    # Load & Combine Text from all PDFs
-    status.info("📄 Reading PDF...")
-    progress.progress(20)
-    documents = []
+        status.info("📄 Reading PDF...")
+        progress.progress(20)
+        documents = []
 
-    for uploaded_file in uploaded_files:
-        documents.extend(safe_load_pdf_documents(uploaded_file))
+        for uploaded_file in uploaded_files:
+            documents.extend(safe_load_pdf_documents(uploaded_file))
 
-    pdf_text = "\n".join(
-        [
-            doc.page_content if hasattr(doc, "page_content") else str(doc)
-            for doc in documents
-        ]
-    )
+        if not documents:
+            st.warning("No text could be extracted from the uploaded PDF. Please try another file.")
+            st.stop()
 
-    if not documents:
-        st.warning("No text could be extracted from the uploaded PDF. Please try another file.")
-        st.stop()
+        pdf_text = "\n".join(
+            [
+                doc.page_content if hasattr(doc, "page_content") else str(doc)
+                for doc in documents
+            ]
+        )
+
+        status.info("✂️ Splitting Text...")
+        progress.progress(50)
+        chunks = split_text(documents)
+
+        status.info("⚡ Generating Embeddings & Vector Store...")
+        progress.progress(80)
+        embeddings = get_embeddings()
+        vector_store = create_vector_store(chunks, embeddings)
+        llm, retriever, prompt = create_rag_chain(vector_store)
+
+        # Store in session state to prevent reprocessing
+        st.session_state.pdf_text = pdf_text
+        st.session_state.chunks = chunks
+        st.session_state.llm = llm
+        st.session_state.retriever = retriever
+        st.session_state.prompt = prompt
+        st.session_state.rag_ready = True
+
+        status.success("✅ AI Ready!")
+        progress.progress(100)
+        st.rerun()
+
+    # Retrieve processed variables from Session State
+    pdf_text = st.session_state.pdf_text
+    chunks = st.session_state.chunks
+    llm = st.session_state.llm
+    retriever = st.session_state.retriever
+    prompt = st.session_state.prompt
+
     word_count = len(pdf_text.split())
     reading_time = max(1, word_count // 200)
-
-    status.info("✂️ Splitting Text...")
-    progress.progress(50)
-    chunks = split_text(documents)
     chunk_count = len(chunks)
 
     st.divider()
@@ -604,15 +655,6 @@ if uploaded_files:
             st.success(f'✅ "{search_query}" found in PDF')
         else:
             st.error(f'❌ "{search_query}" not found in PDF')
-
-    # Vector Store & RAG Setup
-    embeddings = get_embeddings()
-    status.info("⚡ Generating Embeddings & Vector Store...")
-    progress.progress(80)
-    vector_store = create_vector_store(chunks, embeddings)
-    status.success("✅ AI Ready!")
-    progress.progress(100)
-    llm, retriever, prompt = create_rag_chain(vector_store)
 
     # Chat Section
     st.divider()
@@ -663,6 +705,12 @@ if uploaded_files:
         with st.spinner("🤖 AI is thinking..."):
             response_text = safe_call_llm(llm, final_prompt, "Unable to generate an answer right now.")
 
+        # Safe chat history appended
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+        if "recent_questions" not in st.session_state:
+            st.session_state.recent_questions = []
+
         st.session_state.chat_history.append(("You", question))
         st.session_state.recent_questions.append(question)
         st.session_state.chat_history.append(("AI", response_text))
@@ -681,10 +729,13 @@ if uploaded_files:
         st.info(f"📄 Source Page: {page_number}")
 
         if st.button("⭐ Bookmark this Answer", key="btn_bookmark_answer"):
+            if "bookmarks" not in st.session_state:
+                st.session_state.bookmarks = []
             st.session_state.bookmarks.append(response_text)
             st.success("✅ Answer Bookmarked Successfully!")
 
-    if st.session_state.chat_history:
+    # Safe checking of chat history key
+    if "chat_history" in st.session_state and st.session_state.chat_history:
         st.markdown("""
         <div class='info-banner'>💬 Recent conversation appears here for quick review.</div>
         """, unsafe_allow_html=True)
@@ -694,7 +745,7 @@ if uploaded_files:
     st.divider()
 
     st.subheader("⭐ Bookmarked Answers")
-    if st.session_state.bookmarks:
+    if "bookmarks" in st.session_state and st.session_state.bookmarks:
         for i, answer in enumerate(st.session_state.bookmarks, start=1):
             with st.expander(f"📌 Bookmark {i}"):
                 st.write(answer)
@@ -704,7 +755,7 @@ if uploaded_files:
     st.divider()
 
     st.subheader("🕒 Recent Questions")
-    if st.session_state.recent_questions:
+    if "recent_questions" in st.session_state and st.session_state.recent_questions:
         for q in st.session_state.recent_questions[-5:]:
             st.write("•", q)
 
