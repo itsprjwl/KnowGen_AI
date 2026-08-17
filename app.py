@@ -15,9 +15,7 @@ from utils.rag_chain import create_rag_chain
 from utils.text_splitter import split_text
 from utils.vector_store import create_vector_store
 
-# ----------------------------------------------------
-# 1. PAGE CONFIGURATION (MUST BE THE FIRST STREAMLIT COMMAND)
-# ----------------------------------------------------
+
 st.set_page_config(
     page_title="KnowGen AI",
     page_icon="🤖",
@@ -25,9 +23,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ----------------------------------------------------
+-
 # 2. SESSION STATE INITIALIZATION & DEFENSIVE CHECKS
-# ----------------------------------------------------
+
 init_session_state()
 
 # Extra safety checks to prevent AttributeError across all pages
